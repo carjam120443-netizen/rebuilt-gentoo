@@ -84,8 +84,6 @@ echo "==> Using kernel $KERNEL"
 sudo cp "/boot/$KERNEL" "$ISO/boot/vmlinuz"
 sudo chown "$(id -u):$(id -g)" "$ISO/boot/vmlinuz"
 
-# Build a tiny initramfs containing the tools needed to locate the CD,
-# mount its SquashFS payload, and hand control to the Gentoo userspace.
 mkdir -p "$INITRAMFS"/{bin,dev,proc,sys,newroot,tmp,etc,lib/modules}
 BUSYBOX="$(command -v busybox)"
 cp "$BUSYBOX" "$INITRAMFS/bin/busybox"
@@ -95,7 +93,6 @@ done
 
 find_module() {
   find "$MODULES" -type f \( -name "$1.ko" -o -name "$1.ko.*" \) -print -quit
-done
 }
 
 copy_module() {
@@ -114,10 +111,6 @@ copy_module() {
   echo "$name:$dest"
 }
 
-# loop, squashfs and isofs are the only filesystem/block features needed by
-# this live boot path. Ubuntu's generic kernel normally has the first two
-# built in; ISO9660 may be a module. We copy it into the initramfs and build a
-# real modules.dep so BusyBox modprobe can load it reliably at boot.
 for name in loop squashfs isofs; do
   module="$(find_module "$name")"
   if [[ -z "$module" ]]; then
@@ -133,26 +126,17 @@ for name in loop squashfs isofs; do
     echo "ERROR: Required kernel feature/module not found: $name" >&2
     exit 1
   fi
-
   copy_module "$name" >/dev/null
   echo "==> Included kernel module: $name"
 done
 
-# cdrom is useful on physical optical drives but is not required for QEMU's
-# virtual CD-ROM. Include it when available, without making it mandatory.
 if find_module cdrom >/dev/null; then
   copy_module cdrom >/dev/null || true
 fi
 
-# Generate dependency metadata for the modules copied above. depmod may warn
-# about optional metadata files absent from the tiny module tree; those warnings
-# are harmless, but the generated modules.dep is required by BusyBox modprobe.
 mkdir -p "$INITRAMFS/lib/modules/$KVER"
 depmod -b "$INITRAMFS" "$KVER" || true
 
-# The init script must be written literally. In particular, $(losetup -f) must
-# execute inside the booted initramfs, not while this build script is running
-# under `set -u`.
 cat > "$INITRAMFS/init" <<'EOF'
 #!/bin/sh
 set -eu
@@ -162,8 +146,6 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 
-# Load modules from our own initramfs module tree. Built-in modules simply
-# return an error, which is harmless.
 modprobe -d / loop 2>/dev/null || true
 modprobe -d / isofs 2>/dev/null || true
 modprobe -d / squashfs 2>/dev/null || true
@@ -201,8 +183,6 @@ chmod +x "$INITRAMFS/init"
 
 (cd "$INITRAMFS" && find . -print0 | cpio --null -o -H newc | gzip -9 > "$ISO/boot/initramfs")
 
-# Compress the actual Gentoo userspace. This is the payload mounted by the
-# initramfs above, and is what makes the ISO a real live Gentoo environment.
 echo "==> Creating Gentoo live filesystem"
 mksquashfs "$ROOTFS" "$ISO/live/filesystem.squashfs" \
   -comp xz \
@@ -230,9 +210,6 @@ menuentry 'Rebuilt Gentoo (safe graphics)' {
 }
 EOF
 
-# grub-mkrescue creates both the BIOS El Torito image and the UEFI image from
-# the ISO tree. Do not place the output ISO inside the source tree: doing so
-# can make xorriso/grub recursively include its own output.
 OUTPUT_ISO="$BUILD_ROOT/Rebuilt-Gentoo-x86_64.iso"
 rm -f "$OUTPUT_ISO"
 echo "==> Building bootable ISO with GRUB BIOS + UEFI"
@@ -240,8 +217,6 @@ grub-mkrescue \
   -o "$OUTPUT_ISO" \
   "$ISO"
 
-# Keep the final ISO beside the source tree so the ISO cannot accidentally be
-# included inside itself. The workflow uploads this file explicitly.
 cp "$OUTPUT_ISO" "$ISO/Rebuilt-Gentoo-x86_64.iso"
 
 for required in \
