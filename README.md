@@ -1,20 +1,36 @@
-# Rebuilt Gentoo
+# Rebuilt Gentoo 🐧
 
-A modern Gentoo-based distribution project.
+A modern, curated Gentoo-based distribution project.
 
-## Upstream
+## Goals
 
-Rebuilt Gentoo uses the official Gentoo Portage repository as its upstream package tree. The project keeps its own overlay/configuration separate so upstream updates can be synchronized without manually copying individual ebuilds.
+- Stay close to upstream Gentoo and Portage
+- Provide a polished, reproducible ISO experience
+- Ship sensible modern defaults
+- Provide Rebuilt Gentoo branding and artwork
+- Keep custom changes separate from the upstream Gentoo tree
 
-Upstream: https://github.com/gentoo/gentoo
+## Base
+
+- Gentoo Linux
+- Portage / `emerge`
+- OpenRC
+- x86_64 initially
+- KDE Plasma as the planned default desktop
 
 ## Repository layout
 
-- `profiles/` — Rebuilt Gentoo profiles and configuration
+- `gentoo/` — synchronized upstream Gentoo package tree
+- `branding/` — Rebuilt Gentoo branding installed into images/systems
+- `profiles/` — Rebuilt Gentoo profile customizations
 - `overlay/` — Rebuilt Gentoo package overlay
 - `scripts/` — maintenance and build scripts
 - `.github/workflows/` — automated upstream synchronization/build jobs
 
-## License
+## Upstream
 
-Gentoo packages and files synchronized from upstream retain their original licenses and copyright notices. Rebuilt Gentoo's original files are licensed separately where indicated.
+Rebuilt Gentoo tracks the official Gentoo repository. Upstream files retain their original licenses and copyright notices. Rebuilt Gentoo's original files are licensed separately where indicated.
+
+## Status
+
+🚧 Early development.
