@@ -1,0 +1,10 @@
+NAME="Rebuilt Gentoo"
+PRETTY_NAME="Rebuilt Gentoo"
+ID=rebuilt-gentoo
+ID_LIKE=gentoo
+HOME_URL="https://github.com/carjam120443-netizen/rebuilt-gentoo"
+DOCUMENTATION_URL="https://wiki.gentoo.org/"
+BUG_REPORT_URL="https://github.com/carjam120443-netizen/rebuilt-gentoo/issues"
+SUPPORT_URL="https://github.com/carjam120443-netizen/rebuilt-gentoo/issues"
+VERSION="rolling"
+VERSION_ID="rolling"
