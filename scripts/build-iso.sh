@@ -13,7 +13,6 @@ STAGE3_INFO_URL="$GENTOO_BASE/latest-stage3-amd64-openrc.txt"
 rm -rf "$ROOTFS" "$ISO" "$MOUNT" "$INITRAMFS"
 mkdir -p "$ROOTFS" "$ISO" "$MOUNT" "$INITRAMFS" "$ISO/boot" "$ISO/live"
 
-# Resolve the current Gentoo stage3 filename from Gentoo's latest manifest.
 echo "==> Resolving current Gentoo OpenRC stage3"
 mkdir -p "$BUILD_ROOT/downloads"
 STAGE3_INFO="$BUILD_ROOT/downloads/latest-stage3-amd64-openrc.txt"
@@ -29,7 +28,6 @@ STAGE3="$BUILD_ROOT/downloads/$STAGE3_NAME"
 echo "==> Downloading $STAGE3_NAME"
 curl -L --fail --retry 3 --retry-delay 2 -o "$STAGE3" "$STAGE3_URL"
 
-# GitHub-hosted runners do not permit creating device nodes during extraction.
 echo "==> Extracting stage3 (skipping device nodes)"
 tar -xpf "$STAGE3" -C "$ROOTFS" \
   --xattrs-include='*' \
@@ -72,32 +70,36 @@ if [[ -d branding ]]; then
   rsync -a branding/ "$ROOTFS/usr/share/rebuilt-gentoo/branding/"
 fi
 
-# Build a small live-initramfs using the runner's Ubuntu kernel. The kernel is
-# only used to boot the live Gentoo userspace; the Gentoo stage3 remains the root.
 echo "==> Installing kernel and initramfs build dependencies"
 sudo apt-get update
-sudo apt-get install -y linux-image-generic busybox-static cpio grub-pc-bin grub-common
+sudo apt-get install -y linux-image-generic busybox-static cpio grub-pc-bin grub-common xorriso squashfs-tools
 
-KERNEL="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' | sort -V | tail -n1)"
+KERNEL="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' -printf '%f\n' | sort -V | tail -n1)"
 if [[ -z "$KERNEL" ]]; then
   echo "ERROR: No installed Linux kernel found" >&2
+  ls -la /boot >&2
   exit 1
 fi
-KVER="$(basename "$KERNEL" | sed 's/^vmlinuz-//')"
+KVER="${KERNEL#vmlinuz-}"
 MODULES="/lib/modules/$KVER"
 if [[ ! -d "$MODULES" ]]; then
   echo "ERROR: Kernel modules for $KVER are missing" >&2
   exit 1
 fi
-cp "$KERNEL" "$ISO/boot/vmlinuz"
+
+echo "==> Using kernel $KERNEL"
+# GitHub runners keep /boot root-readable; use sudo for the copy, then hand the
+# build files back to the runner user.
+sudo cp "/boot/$KERNEL" "$ISO/boot/vmlinuz"
+sudo chown "$USER:$USER" "$ISO/boot/vmlinuz"
 
 mkdir -p "$INITRAMFS"/{bin,dev,proc,sys,newroot,tmp,etc,lib/modules}
-cp "$(command -v busybox)" "$INITRAMFS/bin/busybox"
+BUSYBOX="$(command -v busybox)"
+cp "$BUSYBOX" "$INITRAMFS/bin/busybox"
 for applet in sh mount umount switch_root modprobe mknod sleep losetup mkdir; do
   ln -sf busybox "$INITRAMFS/bin/$applet"
 done
 
-# Find the modules needed to read the ISO and mount the SquashFS root.
 find_module() {
   local name="$1"
   find "$MODULES" -type f \( -name "$name.ko" -o -name "$name.ko.*" \) -print -quit
@@ -111,26 +113,28 @@ for name in loop squashfs isofs; do
   fi
   relative="${module#$MODULES/}"
   mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
-  cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
+  sudo cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
+  sudo chown "$USER:$USER" "$INITRAMFS/lib/modules/$KVER/$relative"
 done
 
-# Some kernels keep ISO9660 dependencies in a separate CD-ROM module.
 for name in cdrom; do
   module="$(find_module "$name")" || true
   if [[ -n "$module" ]]; then
     relative="${module#$MODULES/}"
     mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
-    cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
+    sudo cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
+    sudo chown "$USER:$USER" "$INITRAMFS/lib/modules/$KVER/$relative"
   fi
 done
 
-# Generate a small modules.dep from the runner's metadata, then retain only
-# entries for modules actually copied into the initramfs.
+# Copy dependency metadata through sudo because it is root-readable on the runner.
 if [[ -f "$MODULES/modules.dep" ]]; then
-  cp "$MODULES/modules.dep" "$INITRAMFS/lib/modules/$KVER/modules.dep"
+  sudo cp "$MODULES/modules.dep" "$INITRAMFS/lib/modules/$KVER/modules.dep"
+  sudo chown "$USER:$USER" "$INITRAMFS/lib/modules/$KVER/modules.dep"
 fi
 if [[ -f "$MODULES/modules.alias" ]]; then
-  cp "$MODULES/modules.alias" "$INITRAMFS/lib/modules/$KVER/modules.alias"
+  sudo cp "$MODULES/modules.alias" "$INITRAMFS/lib/modules/$KVER/modules.alias"
+  sudo chown "$USER:$USER" "$INITRAMFS/lib/modules/$KVER/modules.alias"
 fi
 
 cat > "$INITRAMFS/init" <<'EOF'
@@ -142,7 +146,6 @@ mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 
-sleep 1
 modprobe loop 2>/dev/null || true
 modprobe isofs 2>/dev/null || true
 modprobe squashfs 2>/dev/null || true
@@ -197,7 +200,6 @@ menuentry 'Rebuilt Gentoo (safe graphics)' {
 }
 EOF
 
-# Create the BIOS El Torito GRUB image and put it inside the ISO tree.
 echo "==> Creating GRUB BIOS boot image"
 GRUBDIR="$BUILD_ROOT/grub"
 rm -rf "$GRUBDIR"
@@ -209,7 +211,8 @@ grub-mkstandalone \
   "boot/grub/grub.cfg=$ISO/boot/grub/grub.cfg"
 cp "$GRUBDIR/core.img" "$ISO/grub/core.img"
 
-# Build a BIOS-bootable ISO. VirtualBox's default BIOS firmware can boot this.
+# Build a BIOS El Torito image. The GRUB core image is embedded directly as the
+# El Torito boot image, so there is no reference to a nonexistent ISO path.
 echo "==> Building bootable ISO"
 xorriso -as mkisofs \
   -iso-level 3 \
@@ -222,7 +225,6 @@ xorriso -as mkisofs \
   -output "$ISO/Rebuilt-Gentoo-x86_64.iso" \
   "$ISO"
 
-# Fail the build rather than publishing an obviously incomplete image.
 test -s "$ISO/boot/vmlinuz"
 test -s "$ISO/boot/initramfs"
 test -s "$ISO/live/filesystem.squashfs"
