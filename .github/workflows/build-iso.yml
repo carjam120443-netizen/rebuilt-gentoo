@@ -34,7 +34,9 @@ jobs:
             xorriso \
             grub-pc-bin \
             grub-efi-amd64-bin \
+            grub-common \
             grub2-common \
+            qemu-system-x86 \
             mtools \
             rsync \
             curl \
@@ -48,6 +50,46 @@ jobs:
 
       - name: Build ISO filesystem
         run: bash scripts/build-iso.sh /opt/rebuilt-gentoo/build
+
+      - name: Validate ISO structure
+        run: |
+          ISO=/opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso
+          test -s "$ISO"
+          xorriso -indev "$ISO" -report_el_torito plain
+          xorriso -indev "$ISO" -find /boot -type f -print
+          xorriso -indev "$ISO" -find /live -type f -print
+
+      - name: Smoke test BIOS boot in QEMU
+        shell: bash
+        run: |
+          set +e
+          ISO=/opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso
+          timeout 30s qemu-system-x86_64 \
+            -machine accel=tcg \
+            -m 1024 \
+            -cdrom "$ISO" \
+            -boot d \
+            -serial stdio \
+            -display none \
+            -no-reboot \
+            > /tmp/rebuilt-gentoo-qemu.log 2>&1
+          rc=$?
+          set -e
+
+          echo "QEMU exit code: $rc"
+          sed -n '1,240p' /tmp/rebuilt-gentoo-qemu.log
+
+          # A timeout is expected because the live system intentionally keeps
+          # running. Any earlier QEMU crash/error is a real build failure.
+          if [[ "$rc" -ne 124 ]]; then
+            echo "ERROR: QEMU did not reach the expected running-live-system state." >&2
+            exit 1
+          fi
+
+          grep -Eiq 'Rebuilt Gentoo|Linux version|OpenRC|Gentoo' /tmp/rebuilt-gentoo-qemu.log || {
+            echo "ERROR: QEMU log does not show evidence that the ISO booted." >&2
+            exit 1
+          }
 
       - name: Generate SHA256 checksum
         run: |
