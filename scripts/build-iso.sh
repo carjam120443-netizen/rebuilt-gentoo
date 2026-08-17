@@ -160,9 +160,9 @@ mount -t sysfs sysfs /sys
 
 # Load modules from our own initramfs module tree. Built-in modules simply
 # return an error, which is harmless.
-modprobe -d / -S "" loop 2>/dev/null || true
-modprobe -d / -S "" isofs 2>/dev/null || true
-modprobe -d / -S "" squashfs 2>/dev/null || true
+modprobe -d / loop 2>/dev/null || true
+modprobe -d / isofs 2>/dev/null || true
+modprobe -d / squashfs 2>/dev/null || true
 
 mkdir -p /cdrom /newroot
 for i in 1 2 3 4 5 6 7 8 9 10; do
