@@ -95,6 +95,7 @@ done
 
 find_module() {
   find "$MODULES" -type f \( -name "$1.ko" -o -name "$1.ko.*" \) -print -quit
+done
 }
 
 copy_module() {
@@ -143,16 +144,19 @@ if find_module cdrom >/dev/null; then
   copy_module cdrom >/dev/null || true
 fi
 
-# Generate dependency metadata for the modules copied above. This is done
-# after decompression so the initramfs does not depend on the runner's zstd
-# support at boot.
-depmod -b "$INITRAMFS" "$KVER"
+# Generate dependency metadata for the modules copied above. depmod may warn
+# about optional metadata files absent from the tiny module tree; those warnings
+# are harmless, but the generated modules.dep is required by BusyBox modprobe.
+mkdir -p "$INITRAMFS/lib/modules/$KVER"
+depmod -b "$INITRAMFS" "$KVER" || true
 
-cat > "$INITRAMFS/init" <<EOF
+# The init script must be written literally. In particular, $(losetup -f) must
+# execute inside the booted initramfs, not while this build script is running
+# under `set -u`.
+cat > "$INITRAMFS/init" <<'EOF'
 #!/bin/sh
 set -eu
 export PATH=/bin
-KVER="$KVER"
 
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc
