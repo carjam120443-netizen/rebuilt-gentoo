@@ -65,6 +65,8 @@ sudo apt-get install -y \
   linux-image-generic \
   busybox-static \
   cpio \
+  kmod \
+  zstd \
   grub-pc-bin \
   grub-efi-amd64-bin \
   grub-common \
@@ -82,12 +84,12 @@ echo "==> Using kernel $KERNEL"
 sudo cp "/boot/$KERNEL" "$ISO/boot/vmlinuz"
 sudo chown "$(id -u):$(id -g)" "$ISO/boot/vmlinuz"
 
-# Build a tiny initramfs containing only the tools needed to locate the CD,
+# Build a tiny initramfs containing the tools needed to locate the CD,
 # mount its SquashFS payload, and hand control to the Gentoo userspace.
 mkdir -p "$INITRAMFS"/{bin,dev,proc,sys,newroot,tmp,etc,lib/modules}
 BUSYBOX="$(command -v busybox)"
 cp "$BUSYBOX" "$INITRAMFS/bin/busybox"
-for applet in sh mount umount switch_root modprobe sleep losetup mkdir; do
+for applet in sh mount umount switch_root modprobe sleep losetup mkdir insmod; do
   ln -sf busybox "$INITRAMFS/bin/$applet"
 done
 
@@ -95,8 +97,26 @@ find_module() {
   find "$MODULES" -type f \( -name "$1.ko" -o -name "$1.ko.*" \) -print -quit
 }
 
-# These may be built into the Ubuntu runner kernel. If not, copy the modules
-# into the initramfs. This avoids depending on the runner's module tree at boot.
+copy_module() {
+  local name="$1" module relative dest
+  module="$(find_module "$name")"
+  [[ -n "$module" ]] || return 1
+  relative="${module#$MODULES/}"
+  dest="$INITRAMFS/lib/modules/$KVER/${relative%.zst}"
+  mkdir -p "$(dirname "$dest")"
+  if [[ "$module" == *.zst ]]; then
+    zstd -q -d -f "$module" -o "$dest"
+  else
+    cp "$module" "$dest"
+  fi
+  sudo chown "$(id -u):$(id -g)" "$dest"
+  echo "$name:$dest"
+}
+
+# loop, squashfs and isofs are the only filesystem/block features needed by
+# this live boot path. Ubuntu's generic kernel normally has the first two
+# built in; ISO9660 may be a module. We copy it into the initramfs and build a
+# real modules.dep so BusyBox modprobe can load it reliably at boot.
 for name in loop squashfs isofs; do
   module="$(find_module "$name")"
   if [[ -z "$module" ]]; then
@@ -113,32 +133,36 @@ for name in loop squashfs isofs; do
     exit 1
   fi
 
-  relative="${module#$MODULES/}"
-  mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
-  sudo cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
-  sudo chown "$(id -u):$(id -g)" "$INITRAMFS/lib/modules/$KVER/$relative"
+  copy_module "$name" >/dev/null
+  echo "==> Included kernel module: $name"
 done
 
-module="$(find_module cdrom)"
-if [[ -n "$module" ]]; then
-  relative="${module#$MODULES/}"
-  mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
-  sudo cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
-  sudo chown "$(id -u):$(id -g)" "$INITRAMFS/lib/modules/$KVER/$relative"
+# cdrom is useful on physical optical drives but is not required for QEMU's
+# virtual CD-ROM. Include it when available, without making it mandatory.
+if find_module cdrom >/dev/null; then
+  copy_module cdrom >/dev/null || true
 fi
 
-cat > "$INITRAMFS/init" <<'EOF'
+# Generate dependency metadata for the modules copied above. This is done
+# after decompression so the initramfs does not depend on the runner's zstd
+# support at boot.
+depmod -b "$INITRAMFS" "$KVER"
+
+cat > "$INITRAMFS/init" <<EOF
 #!/bin/sh
 set -eu
 export PATH=/bin
+KVER="$KVER"
 
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 
-modprobe loop 2>/dev/null || true
-modprobe isofs 2>/dev/null || true
-modprobe squashfs 2>/dev/null || true
+# Load modules from our own initramfs module tree. Built-in modules simply
+# return an error, which is harmless.
+modprobe -d / -S "" loop 2>/dev/null || true
+modprobe -d / -S "" isofs 2>/dev/null || true
+modprobe -d / -S "" squashfs 2>/dev/null || true
 
 mkdir -p /cdrom /newroot
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -187,25 +211,34 @@ cat > "$ISO/boot/grub/grub.cfg" <<'EOF'
 set timeout=5
 set default=0
 
+serial --unit=0 --speed=115200
+terminal_input console serial
+terminal_output console serial
+
 menuentry 'Rebuilt Gentoo' {
-    linux /boot/vmlinuz console=ttyS0
+    linux /boot/vmlinuz console=ttyS0,115200
     initrd /boot/initramfs
 }
 
 menuentry 'Rebuilt Gentoo (safe graphics)' {
-    linux /boot/vmlinuz console=ttyS0 nomodeset
+    linux /boot/vmlinuz console=ttyS0,115200 nomodeset
     initrd /boot/initramfs
 }
 EOF
 
-# grub-mkrescue builds the BIOS El Torito image and the UEFI boot image from
-# the installed GRUB platform files. This is safer than manually pointing
-# xorriso at eltorito.img, which failed when that file was not present inside
-# the ISO tree.
+# grub-mkrescue creates both the BIOS El Torito image and the UEFI image from
+# the ISO tree. Do not place the output ISO inside the source tree: doing so
+# can make xorriso/grub recursively include its own output.
+OUTPUT_ISO="$BUILD_ROOT/Rebuilt-Gentoo-x86_64.iso"
+rm -f "$OUTPUT_ISO"
 echo "==> Building bootable ISO with GRUB BIOS + UEFI"
 grub-mkrescue \
-  -o "$ISO/Rebuilt-Gentoo-x86_64.iso" \
+  -o "$OUTPUT_ISO" \
   "$ISO"
+
+# Keep the final ISO beside the source tree so the ISO cannot accidentally be
+# included inside itself. The workflow uploads this file explicitly.
+cp "$OUTPUT_ISO" "$ISO/Rebuilt-Gentoo-x86_64.iso"
 
 for required in \
   "$ISO/boot/vmlinuz" \
