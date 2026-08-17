@@ -72,12 +72,11 @@ if [[ -d branding ]]; then
   rsync -a branding/ "$ROOTFS/usr/share/rebuilt-gentoo/branding/"
 fi
 
-# Build a small live-initramfs. The GitHub runner's Ubuntu kernel has the
-# necessary CD-ROM/ISO9660 support; we load loop + squashfs modules from the
-# runner's installed kernel and mount the compressed Gentoo root from the ISO.
+# Build a small live-initramfs using the runner's Ubuntu kernel. The kernel is
+# only used to boot the live Gentoo userspace; the Gentoo stage3 remains the root.
 echo "==> Installing kernel and initramfs build dependencies"
 sudo apt-get update
-sudo apt-get install -y linux-image-generic busybox-static cpio
+sudo apt-get install -y linux-image-generic busybox-static cpio grub-pc-bin grub-common
 
 KERNEL="$(find /boot -maxdepth 1 -type f -name 'vmlinuz-*' | sort -V | tail -n1)"
 if [[ -z "$KERNEL" ]]; then
@@ -94,49 +93,64 @@ cp "$KERNEL" "$ISO/boot/vmlinuz"
 
 mkdir -p "$INITRAMFS"/{bin,dev,proc,sys,newroot,tmp,etc,lib/modules}
 cp "$(command -v busybox)" "$INITRAMFS/bin/busybox"
-ln -s busybox "$INITRAMFS/bin/sh"
-ln -s busybox "$INITRAMFS/bin/mount"
-ln -s busybox "$INITRAMFS/bin/umount"
-ln -s busybox "$INITRAMFS/bin/switch_root"
-ln -s busybox "$INITRAMFS/bin/modprobe"
-ln -s busybox "$INITRAMFS/bin/mknod"
-ln -s busybox "$INITRAMFS/bin/sleep"
-ln -s busybox "$INITRAMFS/bin/losetup"
+for applet in sh mount umount switch_root modprobe mknod sleep losetup mkdir; do
+  ln -sf busybox "$INITRAMFS/bin/$applet"
+done
 
-# Copy the two modules required to mount the SquashFS file from the ISO.
-for module in \
-  "$MODULES/kernel/fs/squashfs/squashfs.ko" \
-  "$MODULES/kernel/drivers/block/loop.ko"; do
-  if [[ ! -f "$module" ]]; then
-    echo "ERROR: Required kernel module not found: $module" >&2
+# Find the modules needed to read the ISO and mount the SquashFS root.
+find_module() {
+  local name="$1"
+  find "$MODULES" -type f \( -name "$name.ko" -o -name "$name.ko.*" \) -print -quit
+}
+
+for name in loop squashfs isofs; do
+  module="$(find_module "$name")"
+  if [[ -z "$module" ]]; then
+    echo "ERROR: Required kernel module not found: $name" >&2
     exit 1
   fi
-  mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "${module#$MODULES/}")"
-  cp "$module" "$INITRAMFS/lib/modules/$KVER/$(dirname "${module#$MODULES/}")/"
+  relative="${module#$MODULES/}"
+  mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
+  cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
 done
+
+# Some kernels keep ISO9660 dependencies in a separate CD-ROM module.
+for name in cdrom; do
+  module="$(find_module "$name")" || true
+  if [[ -n "$module" ]]; then
+    relative="${module#$MODULES/}"
+    mkdir -p "$INITRAMFS/lib/modules/$KVER/$(dirname "$relative")"
+    cp "$module" "$INITRAMFS/lib/modules/$KVER/$relative"
+  fi
+done
+
+# Generate a small modules.dep from the runner's metadata, then retain only
+# entries for modules actually copied into the initramfs.
+if [[ -f "$MODULES/modules.dep" ]]; then
+  cp "$MODULES/modules.dep" "$INITRAMFS/lib/modules/$KVER/modules.dep"
+fi
+if [[ -f "$MODULES/modules.alias" ]]; then
+  cp "$MODULES/modules.alias" "$INITRAMFS/lib/modules/$KVER/modules.alias"
+fi
 
 cat > "$INITRAMFS/init" <<'EOF'
 #!/bin/sh
 set -eu
-
 export PATH=/bin
 
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
 mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 
-# Give the virtual CD-ROM device a moment to appear.
 sleep 1
-
 modprobe loop 2>/dev/null || true
+modprobe isofs 2>/dev/null || true
 modprobe squashfs 2>/dev/null || true
 
 mkdir -p /cdrom /newroot
 
 for i in 1 2 3 4 5 6 7 8 9 10; do
-    if [ -b /dev/sr0 ]; then
-        break
-    fi
+    [ -b /dev/sr0 ] && break
     sleep 1
 done
 
@@ -152,7 +166,6 @@ if [ ! -f /cdrom/live/filesystem.squashfs ]; then
     exec sh
 fi
 
-# Find a free loop device and mount the compressed root filesystem.
 LOOP="$(losetup -f)"
 losetup -r "$LOOP" /cdrom/live/filesystem.squashfs
 mount -t squashfs -o ro "$LOOP" /newroot
@@ -166,17 +179,9 @@ exec switch_root /newroot /sbin/init
 EOF
 chmod +x "$INITRAMFS/init"
 
-# Device nodes are created at boot by devtmpfs; no privileged mknod is needed here.
-mkdir -p "$INITRAMFS/dev"
-
-# Include module dependency metadata and the module loader configuration.
-cp -a "$MODULES/modules.dep" "$INITRAMFS/lib/modules/$KVER/" 2>/dev/null || true
-cp -a "$MODULES/modules.alias" "$INITRAMFS/lib/modules/$KVER/" 2>/dev/null || true
-
 (cd "$INITRAMFS" && find . -print0 | cpio --null -o -H newc | gzip -9 > "$ISO/boot/initramfs")
 
-# Create a GRUB configuration pointing at the real kernel and initramfs.
-mkdir -p "$ISO/boot/grub"
+mkdir -p "$ISO/boot/grub" "$ISO/grub"
 cat > "$ISO/boot/grub/grub.cfg" <<'EOF'
 set timeout=5
 set default=0
@@ -192,19 +197,20 @@ menuentry 'Rebuilt Gentoo (safe graphics)' {
 }
 EOF
 
-# Build a BIOS-bootable ISO with GRUB's El Torito image.
-echo "==> Installing GRUB BIOS modules"
-sudo apt-get install -y grub-pc-bin grub-common
+# Create the BIOS El Torito GRUB image and put it inside the ISO tree.
+echo "==> Creating GRUB BIOS boot image"
 GRUBDIR="$BUILD_ROOT/grub"
 rm -rf "$GRUBDIR"
 mkdir -p "$GRUBDIR"
 grub-mkstandalone \
   -O i386-pc \
   -o "$GRUBDIR/core.img" \
-  --modules="biosdisk iso9660 normal linux multiboot search search_fs_file" \
+  --modules="biosdisk iso9660 normal linux search search_fs_file" \
   "boot/grub/grub.cfg=$ISO/boot/grub/grub.cfg"
+cp "$GRUBDIR/core.img" "$ISO/grub/core.img"
 
-# xorriso's GRUB boot image must be embedded as an El Torito BIOS image.
+# Build a BIOS-bootable ISO. VirtualBox's default BIOS firmware can boot this.
+echo "==> Building bootable ISO"
 xorriso -as mkisofs \
   -iso-level 3 \
   -full-iso9660-filenames \
@@ -216,12 +222,13 @@ xorriso -as mkisofs \
   -output "$ISO/Rebuilt-Gentoo-x86_64.iso" \
   "$ISO"
 
-# Basic sanity checks: fail the Action instead of publishing another non-bootable ISO.
+# Fail the build rather than publishing an obviously incomplete image.
 test -s "$ISO/boot/vmlinuz"
 test -s "$ISO/boot/initramfs"
 test -s "$ISO/live/filesystem.squashfs"
+test -s "$ISO/grub/core.img"
 test -s "$ISO/Rebuilt-Gentoo-x86_64.iso"
 
 xorriso -indev "$ISO/Rebuilt-Gentoo-x86_64.iso" -report_el_torito plain
 
-echo "==> Bootable ISO created: $ISO/Rebuilt-Gentoo-x86_64.iso"
+echo "==> Bootable Rebuilt Gentoo ISO created: $ISO/Rebuilt-Gentoo-x86_64.iso"
