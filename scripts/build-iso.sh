@@ -6,21 +6,33 @@ ROOTFS="$BUILD_ROOT/rootfs"
 ISO="$BUILD_ROOT/iso"
 MOUNT="$BUILD_ROOT/mount"
 
-GENTOO_MIRROR="https://distfiles.gentoo.org/releases/amd64/autobuilds/"
-STAGE3_URL="${STAGE3_URL:-https://distfiles.gentoo.org/releases/amd64/autobuilds/current-stage3-amd64-openrc/stage3-amd64-openrc.tar.xz}"
+GENTOO_BASE="https://distfiles.gentoo.org/releases/amd64/autobuilds/current-stage3-amd64-openrc"
+STAGE3_INFO_URL="$GENTOO_BASE/latest-stage3-amd64-openrc.txt"
 
 rm -rf "$ROOTFS" "$ISO" "$MOUNT"
 mkdir -p "$ROOTFS" "$ISO" "$MOUNT" "$ISO/boot" "$ISO/live"
 
-echo "==> Downloading Gentoo OpenRC stage3"
+# Resolve the current stage3 filename from Gentoo's signed 'latest' manifest.
+# The filename changes over time, so hard-coding stage3-amd64-openrc.tar.xz
+# eventually results in a 404.
+echo "==> Resolving current Gentoo OpenRC stage3"
 mkdir -p "$BUILD_ROOT/downloads"
-STAGE3="$BUILD_ROOT/downloads/stage3-amd64-openrc.tar.xz"
-curl -L --fail --retry 3 -o "$STAGE3" "$STAGE3_URL"
+STAGE3_INFO="$BUILD_ROOT/downloads/latest-stage3-amd64-openrc.txt"
+curl -L --fail --retry 3 -o "$STAGE3_INFO" "$STAGE3_INFO_URL"
+STAGE3_NAME="$(awk '/^stage3-amd64-openrc-[0-9].*\.tar\.xz [0-9]+$/ {print $1; exit}' "$STAGE3_INFO")"
+if [[ -z "$STAGE3_NAME" ]]; then
+  echo "ERROR: Could not determine the current Gentoo stage3 filename." >&2
+  cat "$STAGE3_INFO" >&2
+  exit 1
+fi
+STAGE3_URL="$GENTOO_BASE/$STAGE3_NAME"
+STAGE3="$BUILD_ROOT/downloads/$STAGE3_NAME"
+echo "==> Downloading $STAGE3_NAME"
+curl -L --fail --retry 3 --retry-delay 2 -o "$STAGE3" "$STAGE3_URL"
 
 echo "==> Extracting stage3"
 tar -xpf "$STAGE3" -C "$ROOTFS" --xattrs-include='*' --numeric-owner
 
-# Basic live-system configuration.
 mkdir -p "$ROOTFS/etc"
 cat > "$ROOTFS/etc/os-release" <<'EOF'
 NAME="Rebuilt Gentoo"
@@ -50,18 +62,14 @@ cat > "$ROOTFS/etc/motd" <<'EOF'
               Gentoo-based • Rebuilt for modern systems
 EOF
 
-# Include branding resources when available.
 if [[ -d branding ]]; then
   mkdir -p "$ROOTFS/usr/share/rebuilt-gentoo"
   rsync -a branding/ "$ROOTFS/usr/share/rebuilt-gentoo/branding/"
 fi
 
-# Copy a compressed root filesystem into the ISO.
 echo "==> Creating SquashFS"
 mksquashfs "$ROOTFS" "$ISO/live/filesystem.squashfs" -comp xz -noappend
 
-# Minimal GRUB BIOS/UEFI boot image.
-echo "==> Creating GRUB configuration"
 mkdir -p "$ISO/boot/grub"
 cat > "$ISO/boot/grub/grub.cfg" <<'EOF'
 set timeout=5
@@ -78,8 +86,6 @@ menuentry 'Rebuilt Gentoo (safe graphics)' {
 }
 EOF
 
-# Kernel/initramfs are expected to be supplied by a later kernel stage.
-# Keep placeholders out of the ISO rather than producing a falsely bootable image.
 echo "Rebuilt Gentoo ISO filesystem prepared."
 
 xorriso -as mkisofs \
