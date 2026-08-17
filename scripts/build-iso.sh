@@ -12,9 +12,7 @@ STAGE3_INFO_URL="$GENTOO_BASE/latest-stage3-amd64-openrc.txt"
 rm -rf "$ROOTFS" "$ISO" "$MOUNT"
 mkdir -p "$ROOTFS" "$ISO" "$MOUNT" "$ISO/boot" "$ISO/live"
 
-# Resolve the current stage3 filename from Gentoo's signed 'latest' manifest.
-# The filename changes over time, so hard-coding stage3-amd64-openrc.tar.xz
-# eventually results in a 404.
+# Resolve the current stage3 filename from Gentoo's latest manifest.
 echo "==> Resolving current Gentoo OpenRC stage3"
 mkdir -p "$BUILD_ROOT/downloads"
 STAGE3_INFO="$BUILD_ROOT/downloads/latest-stage3-amd64-openrc.txt"
@@ -30,8 +28,16 @@ STAGE3="$BUILD_ROOT/downloads/$STAGE3_NAME"
 echo "==> Downloading $STAGE3_NAME"
 curl -L --fail --retry 3 --retry-delay 2 -o "$STAGE3" "$STAGE3_URL"
 
-echo "==> Extracting stage3"
-tar -xpf "$STAGE3" -C "$ROOTFS" --xattrs-include='*' --numeric-owner
+# GitHub-hosted runners do not permit creating device nodes during tar extraction.
+# /dev is intentionally extracted as an empty directory; a real live kernel will
+# populate it with devtmpfs when the system boots.
+echo "==> Extracting stage3 (skipping device nodes)"
+tar -xpf "$STAGE3" -C "$ROOTFS" \
+  --xattrs-include='*' \
+  --numeric-owner \
+  --exclude='./dev/*' \
+  --exclude='./dev'
+mkdir -p "$ROOTFS/dev"
 
 mkdir -p "$ROOTFS/etc"
 cat > "$ROOTFS/etc/os-release" <<'EOF'
