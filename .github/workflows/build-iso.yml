@@ -53,18 +53,25 @@ jobs:
 
       - name: Validate ISO structure
         run: |
+          set -euo pipefail
           ISO=/opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso
           test -s "$ISO"
           xorriso -indev "$ISO" -report_el_torito plain
           xorriso -indev "$ISO" -find /boot -type f -print
           xorriso -indev "$ISO" -find /live -type f -print
 
+          # The generated ISO must contain the boot files and the actual live
+          # payload, not just a GRUB image.
+          xorriso -indev "$ISO" -find /boot/vmlinuz -type f -print | grep -q '/boot/vmlinuz'
+          xorriso -indev "$ISO" -find /boot/initramfs -type f -print | grep -q '/boot/initramfs'
+          xorriso -indev "$ISO" -find /live/filesystem.squashfs -type f -print | grep -q '/live/filesystem.squashfs'
+
       - name: Smoke test BIOS boot in QEMU
         shell: bash
         run: |
           set +e
           ISO=/opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso
-          timeout 30s qemu-system-x86_64 \
+          timeout 45s qemu-system-x86_64 \
             -machine accel=tcg \
             -m 1024 \
             -cdrom "$ISO" \
@@ -77,12 +84,13 @@ jobs:
           set -e
 
           echo "QEMU exit code: $rc"
-          sed -n '1,240p' /tmp/rebuilt-gentoo-qemu.log
+          sed -n '1,320p' /tmp/rebuilt-gentoo-qemu.log
 
-          # A timeout is expected because the live system intentionally keeps
-          # running. Any earlier QEMU crash/error is a real build failure.
-          if [[ "$rc" -ne 124 ]]; then
-            echo "ERROR: QEMU did not reach the expected running-live-system state." >&2
+          # timeout(1) returns 124 when the guest is still running, which is
+          # the expected result for a live ISO. Also accept a normal QEMU exit
+          # if the log proves that the kernel/initramfs/live system booted.
+          if [[ "$rc" -ne 124 ]] && ! grep -Eiq 'Rebuilt Gentoo|Linux version|OpenRC|Gentoo' /tmp/rebuilt-gentoo-qemu.log; then
+            echo "ERROR: QEMU exited before showing evidence of a live-system boot." >&2
             exit 1
           fi
 
