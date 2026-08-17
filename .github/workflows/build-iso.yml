@@ -1,0 +1,65 @@
+name: Build Rebuilt Gentoo ISO
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'branding/**'
+      - 'profiles/**'
+      - '.github/workflows/build-iso.yml'
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-iso:
+    name: Build x86_64 ISO
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Rebuilt Gentoo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install ISO build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap \
+            squashfs-tools \
+            xorriso \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            grub2-common \
+            mtools \
+            rsync \
+            curl \
+            wget
+
+      - name: Prepare build environment
+        run: |
+          sudo mkdir -p /opt/rebuilt-gentoo/build
+          sudo chown -R "$USER:$USER" /opt/rebuilt-gentoo
+          mkdir -p /opt/rebuilt-gentoo/build/{rootfs,iso}
+
+      - name: Build ISO filesystem
+        run: bash scripts/build-iso.sh /opt/rebuilt-gentoo/build
+
+      - name: Generate SHA256 checksum
+        run: |
+          cd /opt/rebuilt-gentoo/build/iso
+          sha256sum Rebuilt-Gentoo-x86_64.iso > Rebuilt-Gentoo-x86_64.iso.sha256
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebuilt-gentoo-x86_64-iso
+          path: |
+            /opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso
+            /opt/rebuilt-gentoo/build/iso/Rebuilt-Gentoo-x86_64.iso.sha256
+          if-no-files-found: error
+          retention-days: 14
