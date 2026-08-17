@@ -1,0 +1,36 @@
+name: Sync Gentoo Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Rebuilt Gentoo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      - name: Sync Gentoo tree
+        run: bash scripts/sync-gentoo.sh
+
+      - name: Commit upstream tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add gentoo/
+          if git diff --cached --quiet; then
+            echo "No Gentoo upstream changes."
+            exit 0
+          fi
+          git commit -m "Sync Gentoo upstream"
+          git push
