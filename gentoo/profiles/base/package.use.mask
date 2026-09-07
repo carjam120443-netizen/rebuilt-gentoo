@@ -6,6 +6,10 @@
 
 # New entries go on top.
 
+# Michał Górny <mgorny@gentoo.org> (2026-09-05)
+# dev-python/{ioflo,raet} stuck on Python 3.12 and last-rited.
+app-admin/salt raet
+
 # Emi <reedy.sailors.8t@icloud.com> (2026-07-30)
 # Turnstile is currently in ::guru
 sys-auth/pambase turnstile
@@ -43,12 +47,6 @@ dev-cpp/eigen:3/3.4 test
 # Paul Zander <negril.nx+gentoo@gmail.com> (2026-05-04)
 # uses MeDiPack
 ~sci-libs/adolc-9999 -mpi
-
-# Andreas Sturmlechner <asturm@gentoo.org> (2026-05-15)
-# Various integration packages. Maintainers, you must drop Qt5 support.
-<=app-i18n/fcitx-qt-5.1.14-r0 qt5
-<=x11-themes/QGnomePlatform-0.9.2-r7 qt5
-<=x11-themes/adwaita-qt-1.4.2-r1 qt5
 
 # Michał Górny <mgorny@gentoo.org> (2026-05-07)
 # Force-enable all PYTHON_TARGETS for python-exec to avoid using private
