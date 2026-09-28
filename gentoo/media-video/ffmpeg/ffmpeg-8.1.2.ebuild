@@ -3,7 +3,7 @@
 
 EAPI=8
 
-inherit flag-o-matic multilib-minimal toolchain-funcs udev
+inherit flag-o-matic multilib-minimal toolchain-funcs
 
 FFMPEG_SOC_PATCH=ffmpeg-soc-8.1.patch
 FFMPEG_SUBSLOT=60.62.62 # avutil.avcodec.avformat SONAME
@@ -22,7 +22,7 @@ else
 		${FFMPEG_SOC_PATCH:+"
 			soc? ( https://dev.gentoo.org/~chewi/distfiles/${FFMPEG_SOC_PATCH} )
 		"}
-		https://distfiles.gentoo.org/pub/dev/ionen@gentoo.org/ffmpeg-$(ver_cut 1-2)-patchset-1.tar.xz
+		https://distfiles.gentoo.org/pub/dev/ionen@gentoo.org/ffmpeg-$(ver_cut 1-2)-patchset-2.tar.xz
 	"
 	S=${WORKDIR}/ffmpeg-${PV} # avoid ${P} for ffmpeg-compat
 	KEYWORDS="~alpha amd64 arm arm64 ~hppa ~loong ~mips ppc ppc64 ~riscv ~sparc x86 ~arm64-macos ~x64-macos"
@@ -306,7 +306,10 @@ COMMON_DEPEND="
 	zlib? ( virtual/zlib:=[${MULTILIB_USEDEP}] )
 	zvbi? ( media-libs/zvbi[${MULTILIB_USEDEP}] )
 	${FFMPEG_SOC_PATCH:+"
-		soc? ( virtual/libudev:=[${MULTILIB_USEDEP}] )
+		soc? (
+			media-video/ffmpeg-soc-udev-rules
+			virtual/libudev:=[${MULTILIB_USEDEP}]
+		)
 	"}
 "
 RDEPEND="
@@ -618,17 +621,4 @@ multilib_src_install() {
 	emake V=1 DESTDIR="${D}" install
 	in_iuse chromium && use chromium && multilib_is_native_abi &&
 		emake V=1 DESTDIR="${D}" install-libffmpeg
-}
-
-multilib_src_install_all() {
-	in_iuse soc && use soc && udev_dorules "${FILESDIR}"/60-dma-heap-ffmpeg.rules
-	einstalldocs
-}
-
-pkg_postinst() {
-	in_iuse soc && use soc && udev_reload
-}
-
-pkg_postrm() {
-	in_iuse soc && use soc && udev_reload
 }

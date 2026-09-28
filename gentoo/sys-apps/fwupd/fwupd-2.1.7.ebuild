@@ -16,7 +16,7 @@ SRC_URI="
 
 LICENSE="LGPL-2.1+"
 SLOT="0"
-KEYWORDS="~amd64 ~arm ~arm64 ~loong ~ppc64 ~riscv ~x86"
+KEYWORDS="amd64 ~arm arm64 ~loong ppc64 ~riscv x86"
 IUSE="amdgpu bash-completion bluetooth elogind +gnutls gtk-doc introspection minimal"
 IUSE+=" modemmanager policykit selinux seccomp systemd test tpm readline uefi valgrind"
 REQUIRED_USE="
@@ -98,8 +98,10 @@ BDEPEND="
 	)
 	uefi? (
 		$(python_gen_cond_dep '
-			dev-python/pygobject:3[cairo]
+			dev-python/pycairo[${PYTHON_USEDEP}]
+			dev-python/pygobject:3[cairo,${PYTHON_USEDEP}]
 		')
+		x11-libs/pango[introspection]
 	)
 	verify-sig? ( sec-keys/openpgp-keys-hughsie )
 "
