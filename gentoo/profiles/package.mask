@@ -36,6 +36,91 @@
 
 #--- END OF EXAMPLES ---
 
+# Michael Orlitzky <mjo@gentoo.org> (2026-10-24)
+# dev-php packages that were added to support composer, phpunit,
+# etc. and are now abandoned. All are outdated and several have known
+# security issues. Removal on 2026-12-01 if no one complains.
+dev-php/File_Iterator
+dev-php/SabreAMF
+dev-php/Text_Template
+dev-php/ca-bundle
+dev-php/cli-prompt
+dev-php/doctrine
+dev-php/doctrine-instantiator
+dev-php/fedora-autoloader
+dev-php/jsonlint
+dev-php/json-schema
+dev-php/metadata-minifier
+dev-php/mmslib
+dev-php/myclabs-deepcopy
+dev-php/nikic-php-parser
+dev-php/phar-io-manifest
+dev-php/phar-io-version
+dev-php/phar-utils
+dev-php/psr-log
+dev-php/reactphp-promise
+dev-php/sebastian-code-unit-reverse-lookup
+dev-php/sebastian-complexity
+dev-php/sebastian-diff
+dev-php/sebastian-environment
+dev-php/sebastian-lines-of-code
+dev-php/sebastian-resource-operations
+dev-php/sebastian-type
+dev-php/sebastian-version
+dev-php/semver
+dev-php/spdx-licenses
+dev-php/symfony-filesystem
+dev-php/symfony-finder
+dev-php/symfony-process
+dev-php/theseer-Autoload
+dev-php/theseer-DirectoryScanner
+dev-php/theseer-tokenizer
+dev-php/twig
+dev-php/webmozart-assert
+dev-php/xdebug-handler
+dev-php/zetacomponents-Base
+dev-php/zetacomponents-ConsoleTools
+
+# David Seifert <soap@gentoo.org> (2026-10-24)
+# Upstream abandoned, GTK+2 based, blocks openssl-4 migration.
+# net-irc/zoitechat is a maintained GTK+3 fork, please switch to that.
+# Removal on 2026-11-23. Bug #977173.
+net-irc/hexchat
+
+# David Seifert <soap@gentoo.org> (2026-10-24)
+# Unmaintained, blocks openssl-4 transition, tons of bugs, X.509 + HPN
+# patches are a lost cause. For X.509, use net-misc/pkixssh. HPN-SSH is
+# not packaged as a separate fork, and requires a dedicated commitment.
+# Removal on 2026-11-23. Bug #978473.
+net-misc/openssh-contrib
+
+# Michał Górny <mgorny@gentoo.org> (2026-10-22)
+# Not ported to py3.13.  No revdeps.
+# Removal on 2026-11-21.  Bug #952389.
+dev-python/pythondialog
+
+# Michał Górny <mgorny@gentoo.org> (2026-10-22)
+# Not ported to py3.13.  Ton of other bugs reported, including build
+# failures and a version bump request.
+# Removal on 2026-11-21.  Bug #952686.
+sci-mathematics/gsl-shell
+
+# Michał Górny <mgorny@gentoo.org> (2026-10-22)
+# Not ported to py3.13.  Indirectly depends on dev-python/sphinx that
+# dropped py3.12 support.
+# Removal on 2026-11-21.  Bug #956588.
+mail-client/alot
+
+# Sam James <sam@gentoo.org> (2026-10-22)
+# Replaced by importlib, no reverse dependencies (bug #984696). Removal
+# on 2026-11-22.
+dev-python/entrypoints
+
+# Sam James <sam@gentoo.org> (2026-10-20)
+# Breaks one of its major reverse dependencies, so mask for now as nothing
+# needs a newer version yet (bug #984580).
+>=app-text/podofo-1
+
 # Eli Schwartz <eschwartz@gentoo.org> (2026-10-18)
 # Unmaintained in gentoo, formally abandoned upstream in favor of
 # media-libs/libv4l[dvb]. Sources no longer available upstream.
@@ -635,11 +720,6 @@ x11-drivers/nvidia-drivers:0/390
 # Apparently the "b" in version means "beta". 3.24 is available, we
 # should update to that. #841437
 ~sci-physics/bullet-3.22b
-
-# Brian Evans <grknight@gentoo.org> (2022-01-07)
-# The main consumer, phpunit, does not initiate the new timer correctly
-# This is likely to cause issues in tests; Unmask if using for other purposes
->=dev-php/PHP_Timer-5.0
 
 # Ionen Wolkens <ionen@gentoo.org> (2021-10-09)
 # Vulkan beta driver branch aimed at Vulkan developers for testing
