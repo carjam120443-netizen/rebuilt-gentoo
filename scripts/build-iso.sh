@@ -44,14 +44,12 @@ https://github.com/carjam120443-netizen/rebuilt-gentoo
 EOF
 
 cat > "$ROOTFS/etc/motd" <<'EOF'
-   ____      _ _ _   _ ____  _ _   _
-  |  _ \ ___| | | | | |  _ \(_) |_| |
-  | |_) / _ \ | | | | | | | | | __| |
-  |  _ <  __/ | | | |_| |_| | | |_| |
-  |_| \_\___|_|_|_|\___/____/|_|\__|_|
-
+ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄      ▄     ▄ ▄▄▄▄▄▄▄ ▄       ▄      ▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄      ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄
+▓     ▓ ▓     ▓ ▓▄▄▄▄▄ ▓     ▓    ▓    ▓       ▓▄▄▄▄▄ ▓  ▄▄▄ ▓     ▓ ▓     ▓ ▓▄▄▄▄▄ ▓     ▓ ▓     ▓
+▒     ▒ ▒▄▄▄▄▄▒ ▒    ▒ ▒     ▒    ▒    ▒       ▒      ▒    ▒ ▒▄▄▄▄▄▒ ▒     ▒ ▒      ▒     ▒ ▒     ▒
+░       ░▄▄▄▄▄▄ ░▄▄▄▄░ ░▄▄▄▄▄░ ▄▄▄░▄▄▄ ░▄▄▄▄▄▄ ░▄▄▄▄▄ ░▄▄▄▄░ ░▄▄▄▄▄▄ ░     ░ ░▄▄▄▄▄ ░▄▄▄▄▄░ ░▄▄▄▄▄░
               Rebuilt Gentoo
-              Gentoo-based • Rebuilt for modern systems
+              Gentoo-based • Rebuilt for modern systems • for more systems
 EOF
 
 if [[ -d branding ]]; then
